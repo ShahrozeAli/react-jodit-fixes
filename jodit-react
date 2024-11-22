@@ -1,0 +1,265 @@
+import React, {
+  useRef,
+  useState,
+  useEffect,
+  useImperativeHandle,
+  forwardRef,
+  useMemo,
+} from "react";
+import RiArrowDropDownLine from "@mui/icons-material/KeyboardArrowDown";
+import JoditEditor, { Jodit } from "jodit-react";
+import DOMPurify from "dompurify";
+import SlidingList from "../../components/Deals/Edit/Components/SlidingList/SlidingList";
+import "./TextEditor.css";
+import "./jodit.css";
+
+// Custom plugin to handle paste events for text and images only
+function preparePaste(jodit) {
+  jodit.events.on(
+    "paste",
+    (e) => {
+      e.preventDefault(); // Prevent default paste behavior
+      const dataTransfer = Jodit.modules.Helpers.getDataTransfer(e);
+
+      // Extract pasted content
+      const pastedHTML = dataTransfer.getData(Jodit.constants.TEXT_HTML);
+      const pastedText = dataTransfer.getData(Jodit.constants.TEXT_PLAIN);
+      const pastedFiles = dataTransfer.files;
+
+      if (pastedFiles.length > 0) {
+        // Handle image files only
+        Array.from(pastedFiles).forEach((file) => {
+          if (file.type.startsWith("image/")) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              jodit.s.insertHTML(
+                `<img src="${event.target.result}" alt="Pasted Image" style="line-height: 10px;" />`
+              );
+            };
+            reader.readAsDataURL(file);
+          }
+        });
+      } else if (pastedHTML) {
+        // Preserve line breaks and spaces in HTML
+        const sanitizedContent = sanitizeForTextAndImages(pastedHTML);
+        const formattedContent = `<div style="white-space: pre-wrap; line-height: 20px;">${sanitizedContent}</div>`;
+        jodit.s.insertHTML(formattedContent);
+      } else if (pastedText) {
+        // Preserve line breaks and spaces in plain text
+        const sanitizedText = sanitizePlainTextWithLineBreaks(pastedText);
+        const formattedText = `<div style="white-space: pre-wrap; line-height: 20px;">${sanitizedText}</div>`;
+        jodit.s.insertHTML(formattedText);
+      }
+      return false;
+    },
+    { top: true }
+  );
+}
+
+// Helper function to sanitize HTML, keeping only text and <img> tags
+function sanitizeForTextAndImages(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+
+  // Remove all elements except <img>, <br>, and <p>
+  doc.body.querySelectorAll("*").forEach((el) => {
+    if (!["IMG", "BR", "P"].includes(el.tagName)) {
+      el.replaceWith(document.createTextNode(el.textContent || ""));
+    }
+  });
+
+  return doc.body.innerHTML;
+}
+
+// Helper function to sanitize plain text while preserving line breaks
+function sanitizePlainTextWithLineBreaks(text) {
+  // Replace newlines with <br /> to preserve line breaks
+  const sanitized = DOMPurify.sanitize(text);
+  return sanitized.replace(/\n/g, "<br />");
+}
+
+// Register the plugin globally
+Jodit.plugins.add("preparePaste", preparePaste);
+
+const RichTextEditor = forwardRef(
+  (
+    {
+      value = "",
+      initialValue = "",
+      onChange = () => {},
+      name = "",
+      placeholderText = "",
+      showExtraButtons = false,
+      loadingEmailTemplate = false,
+      setUpdatedEmailContent = () => {},
+    },
+    ref
+  ) => {
+    const editorRef = useRef(null);
+    const dropdownRef = useRef(null);
+    const cursorPositionRef = useRef(null); // Store cursor position
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+
+    console.log("re render -- RichTextEditor");
+
+    // useEffect(() => {
+    //   // Sync initial value only once
+    //   const editorInstance = editorRef.current;
+    //   if (editorInstance) {
+    //     editorInstance.value = initialValue;
+    //   }
+    // }, [initialValue, loadingEmailTemplate]);
+
+    const saveCursorPosition = () => {
+      const editorInstance = editorRef.current;
+      if (editorInstance) {
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+          cursorPositionRef.current = selection.getRangeAt(0).cloneRange();
+        }
+      }
+    };
+
+    const restoreCursorPosition = () => {
+      if (cursorPositionRef.current) {
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(cursorPositionRef.current);
+      }
+    };
+
+    const handleChange = (newContent) => {
+      if (onChange) {
+        // const sanitizedContent = DOMPurify.sanitize(newContent);
+        setUpdatedEmailContent({
+          name,
+          content: newContent,
+        });
+        // onChange(name, sanitizedContent);
+      }
+    };
+
+    const injectText = (text) => {
+      console.log("Injecting Texting...");
+      const editorInstance = editorRef.current;
+      if (editorInstance && cursorPositionRef.current) {
+        const range = cursorPositionRef.current;
+        range.deleteContents();
+        const textNode = document.createTextNode(text);
+        range.insertNode(textNode);
+        range.collapse(false);
+        restoreCursorPosition();
+
+        const updatedContent = editorInstance.value || editorInstance.innerHTML;
+        if (onChange) {
+          onChange(name, updatedContent);
+        }
+      }
+    };
+
+    const toggleDropdown = () => {
+      setDropdownOpen((prev) => !prev);
+    };
+
+    const handleSelectTextEditor = (text) => {
+      injectText(text);
+      setDropdownOpen(false);
+    };
+
+    useEffect(() => {
+      const handleClickOutside = (event) => {
+        if (
+          dropdownRef.current &&
+          !dropdownRef.current.contains(event.target)
+        ) {
+          setDropdownOpen(false);
+        }
+      };
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside);
+      };
+    }, []);
+
+    const config = useMemo(
+      () => ({
+        buttons: [
+          ...(showExtraButtons
+            ? [
+                {
+                  name: "Dynamic Tags",
+                  icon: "",
+                  exec: toggleDropdown,
+                },
+              ]
+            : []),
+          "bold",
+          "italic",
+          "underline",
+          "strikethrough",
+          "|",
+          "ul",
+          "ol",
+          "|",
+          "center",
+          "left",
+          "right",
+          "justify",
+          "|",
+          "link",
+          "image",
+        ],
+        uploader: { insertImageAsBase64URI: true },
+        removeButtons: ["brush", "file"],
+        showXPathInStatusbar: false,
+        showCharsCounter: false,
+        showWordsCounter: false,
+        toolbarAdaptive: false,
+        theme: "default",
+        height: 500,
+        enableDragAndDropFileToEditor: true,
+        events: {
+          click: saveCursorPosition,
+          keyup: saveCursorPosition,
+          focus: restoreCursorPosition,
+        },
+        extraPlugins: ["preparePaste"], // Add the custom plugin here
+      }),
+      [showExtraButtons]
+    );
+
+    useImperativeHandle(ref, () => ({
+      getContent: () => {
+        const editorInstance = editorRef.current;
+        return editorInstance ? editorInstance.value : "";
+      },
+      injectText,
+    }));
+
+    return (
+      <div className="text-editor-container">
+        <JoditEditor
+          ref={editorRef}
+          config={config}
+          value={initialValue}
+          tabIndex={1}
+          onChange={(newContent) => {
+            saveCursorPosition();
+            handleChange(newContent);
+          }}
+          placeholder={placeholderText || "Write something..."}
+        />
+        {dropdownOpen && (
+          <div className="sliding-list-main" ref={dropdownRef}>
+            <SlidingList
+              onSelect={handleSelectTextEditor}
+              name="templateText"
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+);
+
+export default RichTextEditor;
