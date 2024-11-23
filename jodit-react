@@ -6,12 +6,25 @@ import React, {
   forwardRef,
   useMemo,
 } from "react";
+// eslint-disable-next-line no-unused-vars
 import RiArrowDropDownLine from "@mui/icons-material/KeyboardArrowDown";
 import JoditEditor, { Jodit } from "jodit-react";
 import DOMPurify from "dompurify";
 import SlidingList from "../../components/Deals/Edit/Components/SlidingList/SlidingList";
 import "./TextEditor.css";
 import "./jodit.css";
+
+// Debounce function to limit how often a function can be called
+// eslint-disable-next-line no-unused-vars
+const debounce = (func, delay) => {
+  let timeoutId;
+  return function (...args) {
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      func.apply(this, args);
+    }, delay);
+  };
+};
 
 // Custom plugin to handle paste events for text and images only
 function preparePaste(jodit) {
@@ -25,6 +38,13 @@ function preparePaste(jodit) {
       const pastedHTML = dataTransfer.getData(Jodit.constants.TEXT_HTML);
       const pastedText = dataTransfer.getData(Jodit.constants.TEXT_PLAIN);
       const pastedFiles = dataTransfer.files;
+
+      // Prevent inserting duplicates
+      const currentContent = jodit.value || jodit.innerHTML;
+
+      if (currentContent.includes(pastedText)) {
+        return; // Prevent inserting duplicates
+      }
 
       if (pastedFiles.length > 0) {
         // Handle image files only
@@ -63,9 +83,9 @@ function sanitizeForTextAndImages(html) {
 
   // Remove all elements except <img>, <br>, and <p>
   doc.body.querySelectorAll("*").forEach((el) => {
-    if (!["IMG", "BR", "P"].includes(el.tagName)) {
-      el.replaceWith(document.createTextNode(el.textContent || ""));
-    }
+    // if (!["IMG", "BR", "P"].includes(el.tagName)) {
+    el.replaceWith(document.createTextNode(el.textContent || ""));
+    // }
   });
 
   return doc.body.innerHTML;
