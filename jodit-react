@@ -46,6 +46,10 @@ function preparePaste(jodit) {
         return; // Prevent inserting duplicates
       }
 
+      if (currentContent.includes(pastedHTML)) {
+        return; // Prevent inserting duplicates
+      }
+
       if (pastedFiles.length > 0) {
         // Handle image files only
         Array.from(pastedFiles).forEach((file) => {
@@ -84,8 +88,9 @@ function sanitizeForTextAndImages(html) {
   // Remove all elements except <img>, <br>, and <p>
   doc.body.querySelectorAll("*").forEach((el) => {
     // if (!["IMG", "BR", "P"].includes(el.tagName)) {
-    el.replaceWith(document.createTextNode(el.textContent || ""));
-    // }
+    if (!["BR"].includes(el.tagName)) {
+      el.replaceWith(document.createTextNode(el.textContent || ""));
+    }
   });
 
   return doc.body.innerHTML;
